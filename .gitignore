@@ -109,3 +109,6 @@ venv.bak/
 # hide sensitive data
 constants.py
 *.json
+
+# hide user data
+media/

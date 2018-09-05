@@ -1,0 +1,28 @@
+import redis
+import constants as c
+
+
+r = redis.StrictRedis(host=c.REDIS_HOST, port=c.REDIS_PORT, db=c.REDIS_DB)
+
+def get_key_by_chat_id(chat_id):
+    key = '{prefix}:{chat_id}'.format(prefix=c.REDIS_PREFIX, chat_id=chat_id)
+    return key
+
+def get_user_data(chat_id):
+    key = get_key_by_chat_id(chat_id)
+
+    user_data = r.hgetall(key)
+
+    return user_data
+
+def set_user_state(chat_id, state):
+    key = get_key_by_chat_id(chat_id)
+    field = 'state'
+    value = state
+
+    r.hset(key, field, value)
+
+def set_user_field(chat_id, field, value):
+    key = get_key_by_chat_id(chat_id)
+
+    r.hset(key, field, value)
