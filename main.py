@@ -23,6 +23,48 @@ def connect(bot, update):
     update.message.reply_text(c.TEXTS['INSTRUCTION'], disable_web_page_preview=True)
 
 
+def enable_categories_button(chat_id=None, callback_query=None, bot=None):
+    keyboard = [[InlineKeyboardButton(c.TEXTS['CATEGORIES_OFFER_BUTTON'], callback_data='categories_enable')]]
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    if callback_query:
+        callback_query.edit_message_text(text=c.TEXTS['CATEGORIES_OFFER'], reply_markup=reply_markup)
+    else:
+        bot.send_message(chat_id=chat_id, text=c.TEXTS['CATEGORIES_OFFER'], reply_markup=reply_markup)
+
+
+def list_categories(chat_id, callback_query=None, bot=None):
+    categories = db.get_user_categories(chat_id)
+
+    keyboard = [
+        [
+            InlineKeyboardButton('[x] {title}'.format(title=category['title']),
+                                 callback_data='categories_del_{id}'.format(id=category['id']))
+        ] for category in categories
+        ]
+    keyboard.append([InlineKeyboardButton(c.TEXTS['CATEGORIES_ADD_BUTTON'], callback_data='categories_add')])
+    keyboard.append([InlineKeyboardButton(c.TEXTS['CATEGORIES_DISABLE_BUTTON'], callback_data='categories_disable')])
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    text = c.TEXTS['CATEGORIES_LIST'].format(total_categories=len(categories))
+
+    if callback_query:
+        callback_query.edit_message_text(text=text, reply_markup=reply_markup)
+    else:
+        bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
+
+
+def registration_completed(chat_id=None, callback_query=None, bot=None):
+    if callback_query:
+        callback_query.edit_message_text(text=c.TEXTS['REGISTRATION_COMPLETED'], reply_markup=None)
+    else:
+        bot.send_message(chat_id=chat_id, text=c.TEXTS['REGISTRATION_COMPLETED'])
+
+    bot.send_message(chat_id=chat_id, text=c.TEXTS['TEXT_MESSAGE_EXAMPLE'])
+    return enable_categories_button(chat_id=chat_id, bot=bot)
+
+
 def on_message(bot, update):
     chat_id = update.message.chat_id
     text = update.message.text
@@ -55,7 +97,11 @@ def on_message(bot, update):
         db.set_user_field(chat_id, 'worksheet', ws.id)
         db.set_user_state(chat_id, 'ready')
 
-        return update.message.reply_text(c.TEXTS['REGISTRATION_COMPLETED'])
+        return registration_completed(chat_id=chat_id, bot=bot)
+    elif state == 'category_add':
+        db.set_user_state(chat_id, 'ready')
+        db.add_user_category(chat_id, text)
+        return list_categories(chat_id, bot=bot)
     elif state == 'ready':
         pass
 
@@ -74,6 +120,9 @@ def on_callback_query(bot, update):
     state = user_data['state']
 
     document = user_data['document']
+
+    if query == 'empty':
+        return
 
     if state == 'worksheet_selection':
         if query == 'None':
@@ -97,14 +146,30 @@ def on_callback_query(bot, update):
                                                         reply_markup=reply_markup)
 
             db.set_user_state(chat_id, 'ready')
-            return callback_query.edit_message_text(text=c.TEXTS['REGISTRATION_COMPLETED'], reply_markup=None)
+            return registration_completed(chat_id=chat_id, bot=bot, callback_query=callback_query)
         else:
             return callback_query.edit_message_text(text='Error')
     elif state == 'configuring_worksheet':
         if query == 'clear':
             helpers.clear_worksheet(document, user_data['worksheet'])
 
-        return callback_query.edit_message_text(text=c.TEXTS['REGISTRATION_COMPLETED'], reply_markup=None)
+        return registration_completed(chat_id=chat_id, bot=bot, callback_query=callback_query)
+    elif query.startswith('categories_'):
+        query = query[11:]
+
+        if query == 'enable':
+            db.set_user_field(chat_id, 'categories_enabled', True)
+            return list_categories(chat_id, callback_query=callback_query)
+        elif query == 'disable':
+            db.set_user_field(chat_id, 'categories_enabled', False)
+            return enable_categories_button(callback_query=callback_query)
+        elif query == 'add':
+            db.set_user_state(chat_id, 'category_add')
+            return callback_query.edit_message_text(text=c.TEXTS['CATEGORIES_INPUT_NEW'], reply_markup=None)
+        elif query.startswith('del_'):
+            category_to_remove = query[4:]
+            db.remove_user_category(chat_id, category_to_remove)
+            return list_categories(chat_id, callback_query=callback_query)
 
 
 def main():
