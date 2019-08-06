@@ -76,6 +76,8 @@ def on_message(bot, update):
         state = c.DEFAULT_STATE
         db.set_user_state(chat_id, state)
 
+    state = state.decode('utf-8')
+
     if state == 'sheet_registration':
         worksheets = helpers.get_worksheets(text)
 
@@ -92,7 +94,7 @@ def on_message(bot, update):
         else:
             return update.message.reply_text(c.TEXTS['DOCUMENT_VALIDATION_ERROR'])
     elif state == 'worksheet_creation':
-        ws = helpers.create_worksheet(user_data['document'], text)
+        ws = helpers.create_worksheet(user_data[b'document'], text)
 
         db.set_user_field(chat_id, 'worksheet', ws.id)
         db.set_user_state(chat_id, 'ready')
@@ -103,7 +105,18 @@ def on_message(bot, update):
         db.add_user_category(chat_id, text)
         return list_categories(chat_id, bot=bot)
     elif state == 'ready':
-        pass
+        # ready to receive new spendings
+        data = helpers.parse_new_spendings(text)
+
+        if not data:
+            return update.message.reply_text(c.TEXTS['ERROR_PARSING_SPENDINGS'])
+
+        message = update.message.reply_text(c.TEXTS['STORING_SPENDINGS_IN_PROGRESS'])
+        message_id = message.message_id
+
+        db.store_user_spendings(chat_id, message_id, data)  # background processing starts after this
+        return
+
 
 
 def on_photo(bot, update):
@@ -117,9 +130,11 @@ def on_callback_query(bot, update):
     chat_id = callback_query.from_user.id
 
     user_data = db.get_user_data(chat_id)
-    state = user_data['state']
+    state = user_data[b'state'].decode('utf-8')
 
-    document = user_data['document']
+    document = user_data[b'document']
+    print(query)
+    print(state)
 
     if query == 'empty':
         return
@@ -129,10 +144,10 @@ def on_callback_query(bot, update):
             db.set_user_state(chat_id, 'worksheet_creation')
             return callback_query.edit_message_text(text=c.TEXTS['WORKSHEET_CREATION'], reply_markup=None)
 
-        if helpers.validate_worksheet(document, query):
+        if helpers.validate_worksheet(document.decode('utf-8'), query):
             db.set_user_field(chat_id, 'worksheet', query)
 
-            if not helpers.is_worksheet_empty(document, query):
+            if not helpers.is_worksheet_empty(document.decode('utf-8'), query):
                 db.set_user_state(chat_id, 'configuring_worksheet')
 
                 keyboard = [
@@ -151,7 +166,7 @@ def on_callback_query(bot, update):
             return callback_query.edit_message_text(text='Error')
     elif state == 'configuring_worksheet':
         if query == 'clear':
-            helpers.clear_worksheet(document, user_data['worksheet'])
+            helpers.clear_worksheet(document.decode('utf-8'), user_data[b'worksheet'])
 
         return registration_completed(chat_id=chat_id, bot=bot, callback_query=callback_query)
     elif query.startswith('categories_'):
